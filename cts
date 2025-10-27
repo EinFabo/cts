@@ -40,7 +40,14 @@ fi
 
 # Verify argument count.
 if [ "$#" -ne 2 ]; then
-  echo "Usage: cts <username> <hostname or shortcut>"
+  echo "Usage:"
+  echo "  cts <username> <hostname>"
+  echo ""
+  echo "Add a shortcut:"
+  echo "  cts . MyServer=192.168.1.60"
+  echo ""
+  echo "Connect using a shortcut:"
+  echo "  cts admin MyServer"
   exit 1
 fi
 
