@@ -1,17 +1,60 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# ============================================
+# CTS - Connect To Server Installer
+# ============================================
+# Installs the CTS command for Termux or Linux systems.
+# Usage:
+#   curl -s https://raw.githubusercontent.com/<your-username>/cts/main/install.sh | bash
+# ============================================
+
 set -e
 
-echo "📦 Installing cts..."
+BIN_DIR="$HOME/bin"
+CTS_PATH="$BIN_DIR/cts"
+REPO_URL="https://raw.githubusercontent.com/EimFabo/cts/main/cts"
 
-mkdir -p "$HOME/bin"
+echo "Installing CTS (Connect To Server)..."
 
-curl -fsSL "https://raw.githubusercontent.com/EinFabo/cts/main/cts" -o "$HOME/bin/cts"
-
-chmod +x "$HOME/bin/cts"
-
-if ! echo "$PATH" | grep -q "$HOME/bin"; then
-  echo 'export PATH=$HOME/bin:$PATH' >> "$HOME/.bashrc"
-  echo "🔧 PATH wurde angepasst. Starte Termux neu oder führe 'source ~/.bashrc' aus."
+# Create bin directory if it doesn't exist
+if [ ! -d "$BIN_DIR" ]; then
+  echo "Creating $BIN_DIR..."
+  mkdir -p "$BIN_DIR"
 fi
 
-echo "✅ Installation abgeschlossen. Du kannst jetzt 'cts' verwenden."
+# Download the CTS script
+echo "Downloading cts script..."
+curl -s -o "$CTS_PATH" "$REPO_URL"
+
+# Make the script executable
+chmod +x "$CTS_PATH"
+
+# Ensure ~/bin is in PATH
+if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+  echo "Adding $BIN_DIR to PATH..."
+  {
+    echo ""
+    echo "# Added by CTS installer"
+    echo "export PATH=\$PATH:$BIN_DIR"
+  } >> "$HOME/.bashrc"
+
+  if [ -f "$HOME/.profile" ]; then
+    {
+      echo ""
+      echo "# Added by CTS installer"
+      echo "export PATH=\$PATH:$BIN_DIR"
+    } >> "$HOME/.profile"
+  fi
+fi
+
+echo ""
+echo "CTS installed successfully."
+echo ""
+echo "Usage:"
+echo "  cts <username> <hostname>"
+echo ""
+echo "Add a shortcut:"
+echo "  cts . MyServer=192.168.1.60"
+echo ""
+echo "Connect using a shortcut:"
+echo "  cts admin MyServer"
+echo ""

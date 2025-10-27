@@ -1,41 +1,56 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# ============================================
+# CTS - Connect To Server
+# ============================================
+# A simple tool for managing SSH connections
+# with user-defined host shortcuts.
+#
+# Usage:
+#   cts <username> <hostname>
+#   cts . <shortcut>=<IP or hostname>
+# ============================================
 
-CONFIG="$HOME/.cts_hosts"
+CONFIG_FILE="$HOME/.cts_hosts"
 
-# === 1. Shortcut hinzufügen ===
-if [ "$1" = "." ] && [[ "$2" =~ = ]]; then
-  # Format: cts . Name=IP
-  name="${2%%=*}"
-  ip="${2#*=}"
+# Ensure configuration file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+  touch "$CONFIG_FILE"
+fi
 
-  # Datei anlegen, falls nicht vorhanden
-  touch "$CONFIG"
+# Add a new shortcut
+if [ "$1" = "." ]; then
+  if [ -z "$2" ]; then
+    echo "Usage: cts . <shortcut>=<IP or hostname>"
+    exit 1
+  fi
 
-  # Überschreiben, falls Name schon existiert
-  grep -v "^$name=" "$CONFIG" 2>/dev/null > "$CONFIG.tmp" || true
-  echo "$name=$ip" >> "$CONFIG.tmp"
-  mv "$CONFIG.tmp" "$CONFIG"
+  if ! echo "$2" | grep -q "="; then
+    echo "Invalid format. Use: <shortcut>=<IP or hostname>"
+    exit 1
+  fi
 
-  echo "✅ Shortcut hinzugefügt: $name -> $ip"
+  # If shortcut already exists, replace it
+  shortcut_name=$(echo "$2" | cut -d '=' -f1)
+  grep -v "^${shortcut_name}=" "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+
+  echo "$2" >> "$CONFIG_FILE"
+  echo "Shortcut added: $2"
   exit 0
 fi
 
-# === 2. Normale SSH-Verbindung ===
+# Verify argument count
 if [ "$#" -ne 2 ]; then
-  echo "Usage: cts <username> <hostname> oder cts . Name=IP"
+  echo "Usage: cts <username> <hostname or shortcut>"
   exit 1
 fi
 
 username="$1"
 hostname="$2"
 
-# Hostnamen aus Shortcut-Datei auflösen
-if [ -f "$CONFIG" ]; then
-  host_ip=$(grep "^$hostname=" "$CONFIG" | cut -d= -f2)
-  if [ -n "$host_ip" ]; then
-    hostname="$host_ip"
-  fi
+# Replace shortcut with actual host if defined
+if grep -q "^${hostname}=" "$CONFIG_FILE"; then
+  hostname=$(grep "^${hostname}=" "$CONFIG_FILE" | tail -n 1 | cut -d '=' -f2)
 fi
 
-# SSH ausführen
+# Execute SSH connection
 exec ssh "${username}@${hostname}"
