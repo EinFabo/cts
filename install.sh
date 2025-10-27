@@ -4,14 +4,14 @@
 # ============================================
 # Installs the CTS command for Termux or Linux systems.
 # Usage:
-#   curl -s https://raw.githubusercontent.com/<your-username>/cts/main/install.sh | bash
+#   curl -s https://raw.githubusercontent.com/EinFabo/cts/main/install.sh | bash
 # ============================================
 
 set -e
 
 BIN_DIR="$HOME/bin"
 CTS_PATH="$BIN_DIR/cts"
-REPO_URL="https://raw.githubusercontent.com/EimFabo/cts/main/cts"
+REPO_URL="https://raw.githubusercontent.com/EinFabo/cts/main/cts"
 
 echo "Installing CTS (Connect To Server)..."
 
