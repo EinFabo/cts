@@ -38,7 +38,7 @@ if [ "$1" = "." ]; then
   exit 0
 fi
 
-# Verify argument count
+# Verify argument count.
 if [ "$#" -ne 2 ]; then
   echo "Usage: cts <username> <hostname or shortcut>"
   exit 1
