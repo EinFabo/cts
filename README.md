@@ -10,4 +10,4 @@ You can define your own hostnames so you don't have to type the username, host, 
 Install the script directly from GitHub:
 
 ```bash
-curl -s https://raw.githubusercontent.com/<your-username>/cts/main/install.sh | bash
+curl -s https://raw.githubusercontent.com/EinFabo/cts/main/install.sh | bash
