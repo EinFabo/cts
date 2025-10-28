@@ -47,14 +47,5 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 echo ""
-echo "CTS installed successfully."
-echo ""
-echo "Usage:"
-echo "  cts <username> <hostname>"
-echo ""
-echo "Add a shortcut:"
-echo "  cts . MyServer=192.168.1.60"
-echo ""
-echo "Connect using a shortcut:"
-echo "  cts admin MyServer"
+echo "cts -help for help"
 echo ""
