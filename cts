@@ -1,7 +1,7 @@
 #!/bin/bash
 # =======================================
 # CTS (Connect To Server)
-# v1.3-dev
+# v1.3.1
 # =======================================
 # Usage:
 #   cts <username> <alias>
@@ -9,6 +9,7 @@
 #   cts                      -> reconnect to last host
 #   cts -a name=host         -> add alias
 #   cts -rm name             -> remove alias
+#   cts -rma                 -> remove all aliases (with confirmation)
 #   cts -l                   -> list aliases
 #   cts -export <file>       -> export aliases to file
 #   cts -import <file>       -> import aliases from file
@@ -17,15 +18,14 @@
 
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
-VERSION="v1.2"
+VERSION="v1.3"
 
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# --- Ensure config exists ---
 mkdir -p "$(dirname "$CONFIG_FILE")"
 touch "$CONFIG_FILE"
 
@@ -40,6 +40,7 @@ show_help() {
   echo "Options:"
   echo "  -a name=host             Add alias"
   echo "  -rm name                 Remove alias"
+  echo "  -rma                     Remove all aliases (with confirmation)"
   echo "  -l                       List aliases"
   echo "  -export <file>           Export aliases to a file"
   echo "  -import <file>           Import aliases from a file"
@@ -64,7 +65,16 @@ load_last() {
   fi
 }
 
-# --- Command logic ---
+remove_last_if_matches() {
+  if [ -f "$LAST_FILE" ]; then
+    read -r _ last_host < "$LAST_FILE"
+    if [ "$1" = "$last_host" ]; then
+      rm -f "$LAST_FILE"
+    fi
+  fi
+}
+
+# --- Main logic ---
 case "$1" in
   -help)
     show_help
@@ -107,10 +117,23 @@ case "$1" in
       exit 1
     fi
     if grep -qE "^$2=" "$CONFIG_FILE"; then
+      host_to_remove=$(get_host "$2")
       grep -vE "^$2=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+      remove_last_if_matches "$host_to_remove"
       echo -e "${GREEN}Removed alias:${NC} $2"
     else
       echo -e "${RED}Error:${NC} Alias '$2' not found."
+    fi
+    ;;
+  -rma)
+    echo -e "${YELLOW}This will delete all aliases and last connection data.${NC}"
+    read -rp "Are you sure? [y/N]: " confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+      rm -f "$CONFIG_FILE" "$LAST_FILE"
+      touch "$CONFIG_FILE"
+      echo -e "${GREEN}All aliases and saved connections deleted.${NC}"
+    else
+      echo "Aborted."
     fi
     ;;
   -export)
@@ -131,7 +154,6 @@ case "$1" in
       echo -e "${RED}Error:${NC} File not found: $file"
       exit 1
     fi
-    # merge without duplicates
     while IFS= read -r line; do
       alias="${line%%=*}"
       host="${line#*=}"
@@ -142,7 +164,6 @@ case "$1" in
     echo -e "${GREEN}Imported aliases from:${NC} $file"
     ;;
   "")
-    # Quick reconnect to last host
     last=$(load_last)
     if [ -z "$last" ]; then
       echo -e "${YELLOW}No previous connection found.${NC}"
@@ -155,7 +176,6 @@ case "$1" in
     exec ssh "${user}@${host}"
     ;;
   *)
-    # cts <alias>  or  cts <user> <alias>
     if [ $# -eq 1 ]; then
       alias="$1"
       user_host=$(load_last)
