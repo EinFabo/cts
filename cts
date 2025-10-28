@@ -1,161 +1,192 @@
 #!/bin/bash
-# =====================================================
-#  CTS v1.1 - Connect To Server
-#  by EinFabo
-#  https://github.com/EinFabo/cts
-# =====================================================
+# =======================================
+# CTS (Connect To Server)
+# v1.3-dev
+# =======================================
+# Usage:
+#   cts <username> <alias>
+#   cts <alias>
+#   cts                      -> reconnect to last host
+#   cts -a name=host         -> add alias
+#   cts -rm name             -> remove alias
+#   cts -l                   -> list aliases
+#   cts -export <file>       -> export aliases to file
+#   cts -import <file>       -> import aliases from file
+#   cts -help                -> show help
+# =======================================
 
-VERSION="v1.1"
 CONFIG_FILE="$HOME/.cts_hosts"
+LAST_FILE="$HOME/.cts_last"
+VERSION="v1.2"
 
-# === Colors ===
-GREEN="\033[1;32m"
-RED="\033[1;31m"
-YELLOW="\033[1;33m"
-RESET="\033[0m"
+# --- Colors ---
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# === Initialize config file if missing ===
-if [ ! -f "$CONFIG_FILE" ]; then
-  touch "$CONFIG_FILE"
-fi
+# --- Ensure config exists ---
+mkdir -p "$(dirname "$CONFIG_FILE")"
+touch "$CONFIG_FILE"
 
-# === Helper Functions ===
-print_help() {
-  echo -e "${YELLOW}CTS - Connect To Server${RESET}"
-  echo ""
+# --- Helper functions ---
+show_help() {
+  echo -e "${YELLOW}CTS (Connect To Server) $VERSION${NC}"
   echo "Usage:"
-  echo "  cts <alias>                Connect using saved alias"
-  echo "  cts <user> <alias>         Connect and remember user for alias"
-  echo ""
+  echo "  cts <user> <alias>       Connect using alias"
+  echo "  cts <alias>              Connect using saved user"
+  echo "  cts                      Reconnect to last used host"
+  echo
   echo "Options:"
-  echo "  -a <alias>=<host>          Add a new alias"
-  echo "  -r <old>=<new>             Rename an alias"
-  echo "  -rm <alias>                Remove an alias"
-  echo "  -l                         List all aliases"
-  echo "  -v                         Show version info"
-  echo "  -help                      Show this help message"
-  echo ""
+  echo "  -a name=host             Add alias"
+  echo "  -rm name                 Remove alias"
+  echo "  -l                       List aliases"
+  echo "  -export <file>           Export aliases to a file"
+  echo "  -import <file>           Import aliases from a file"
+  echo "  -v                       Show version"
+  echo "  -help                    Show this help message"
 }
 
-print_version() {
-  echo -e "${YELLOW}CTS ${VERSION}${RESET}"
-  echo "by EinFabo"
-  echo "https://github.com/EinFabo/cts"
+get_host() {
+  grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2
 }
 
-list_aliases() {
-  echo -e "${YELLOW}Saved aliases:${RESET}"
-  if [ ! -s "$CONFIG_FILE" ]; then
-    echo "  (none)"
+save_last() {
+  echo "$1 $2" > "$LAST_FILE"
+}
+
+load_last() {
+  if [ -f "$LAST_FILE" ]; then
+    read -r user host < "$LAST_FILE"
+    echo "$user $host"
   else
-    awk -F= '{printf "  %-15s -> %-20s (user: %s)\n", $1, $2, $3 ? $3 : "none"}' "$CONFIG_FILE"
+    echo ""
   fi
 }
 
-# === Core Logic ===
-if [[ "$1" == "-help" ]]; then
-  print_help
-  exit 0
-fi
+# --- Command logic ---
+case "$1" in
+  -help)
+    show_help
+    exit 0
+    ;;
+  -v)
+    echo "CTS version $VERSION"
+    exit 0
+    ;;
+  -l)
+    echo -e "${YELLOW}Saved aliases:${NC}"
+    if [ ! -s "$CONFIG_FILE" ]; then
+      echo "(none)"
+      exit 0
+    fi
+    cat "$CONFIG_FILE"
+    exit 0
+    ;;
+  -a)
+    entry="${2}"
+    name="${entry%%=*}"
+    host="${entry#*=}"
 
-if [[ "$1" == "-v" ]]; then
-  print_version
-  exit 0
-fi
+    if [ -z "$name" ] || [ -z "$host" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -a name=host"
+      exit 1
+    fi
 
-if [[ "$1" == "-l" ]]; then
-  list_aliases
-  exit 0
-fi
+    if grep -qE "^$name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$name' already exists."
+      exit 1
+    fi
 
-if [[ "$1" == "-a" ]]; then
-  pair="${2}"
-  alias_name="${pair%%=*}"
-  host="${pair#*=}"
-
-  if grep -q "^${alias_name}=" "$CONFIG_FILE"; then
-    echo -e "${RED}Alias '${alias_name}' already exists. Use -r to rename or -rm to remove.${RESET}"
-    exit 1
-  fi
-
-  echo "${alias_name}=${host}" >> "$CONFIG_FILE"
-  echo -e "${GREEN}Added alias:${RESET} ${alias_name} -> ${host}"
-  exit 0
-fi
-
-if [[ "$1" == "-r" ]]; then
-  old="${2%%=*}"
-  new="${2#*=}"
-
-  if ! grep -q "^${old}=" "$CONFIG_FILE"; then
-    echo -e "${RED}Alias '${old}' not found.${RESET}"
-    exit 1
-  fi
-
-  if grep -q "^${new}=" "$CONFIG_FILE"; then
-    echo -e "${RED}Alias '${new}' already exists.${RESET}"
-    exit 1
-  fi
-
-  sed -i "s/^${old}=/${new}=/" "$CONFIG_FILE"
-  echo -e "${GREEN}Renamed alias:${RESET} ${old} -> ${new}"
-  exit 0
-fi
-
-if [[ "$1" == "-rm" ]]; then
-  alias_name="$2"
-  if grep -q "^${alias_name}=" "$CONFIG_FILE"; then
-    sed -i "/^${alias_name}=/d" "$CONFIG_FILE"
-    echo -e "${GREEN}Removed alias:${RESET} ${alias_name}"
-  else
-    echo -e "${RED}Alias '${alias_name}' not found.${RESET}"
-  fi
-  exit 0
-fi
-
-# === Connection Handling ===
-if [[ $# -eq 1 ]]; then
-  alias_name="$1"
-
-  line=$(grep "^${alias_name}=" "$CONFIG_FILE")
-  if [ -z "$line" ]; then
-    echo -e "${RED}Alias '${alias_name}' not found.${RESET}"
-    exit 1
-  fi
-
-  host=$(echo "$line" | cut -d= -f2)
-  user=$(echo "$line" | cut -d= -f3)
-
-  if [ -z "$user" ]; then
-    echo -e "${YELLOW}No saved user for '${alias_name}'. Please specify one first.${RESET}"
-    exit 1
-  fi
-
-  echo -e "${GREEN}Connecting to ${user}@${host}...${RESET}"
-  exec ssh "${user}@${host}"
-  exit 0
-fi
-
-if [[ $# -eq 2 ]]; then
-  user="$1"
-  alias_name="$2"
-
-  line=$(grep "^${alias_name}=" "$CONFIG_FILE")
-  if [ -z "$line" ]; then
-    echo -e "${RED}Alias '${alias_name}' not found.${RESET}"
-    exit 1
-  fi
-
-  host=$(echo "$line" | cut -d= -f2)
-  sed -i "/^${alias_name}=/d" "$CONFIG_FILE"
-  echo "${alias_name}=${host}=${user}" >> "$CONFIG_FILE"
-
-  echo -e "${GREEN}Saved user '${user}' for alias '${alias_name}'.${RESET}"
-  echo -e "${GREEN}Connecting to ${user}@${host}...${RESET}"
-  exec ssh "${user}@${host}"
-  exit 0
-fi
-
-# === Default: Show Help ===
-print_help
-exit 0
+    echo "$name=$host" >> "$CONFIG_FILE"
+    echo -e "${GREEN}Added alias:${NC} $name → $host"
+    ;;
+  -rm)
+    if [ -z "$2" ]; then
+      echo -e "${RED}Error:${NC} Missing alias name."
+      exit 1
+    fi
+    if grep -qE "^$2=" "$CONFIG_FILE"; then
+      grep -vE "^$2=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+      echo -e "${GREEN}Removed alias:${NC} $2"
+    else
+      echo -e "${RED}Error:${NC} Alias '$2' not found."
+    fi
+    ;;
+  -export)
+    file="$2"
+    if [ -z "$file" ]; then
+      echo -e "${RED}Error:${NC} Missing export file path."
+      exit 1
+    fi
+    cp "$CONFIG_FILE" "$file" && echo -e "${GREEN}Exported aliases to:${NC} $file"
+    ;;
+  -import)
+    file="$2"
+    if [ -z "$file" ]; then
+      echo -e "${RED}Error:${NC} Missing import file path."
+      exit 1
+    fi
+    if [ ! -f "$file" ]; then
+      echo -e "${RED}Error:${NC} File not found: $file"
+      exit 1
+    fi
+    # merge without duplicates
+    while IFS= read -r line; do
+      alias="${line%%=*}"
+      host="${line#*=}"
+      if ! grep -qE "^$alias=" "$CONFIG_FILE"; then
+        echo "$alias=$host" >> "$CONFIG_FILE"
+      fi
+    done < "$file"
+    echo -e "${GREEN}Imported aliases from:${NC} $file"
+    ;;
+  "")
+    # Quick reconnect to last host
+    last=$(load_last)
+    if [ -z "$last" ]; then
+      echo -e "${YELLOW}No previous connection found.${NC}"
+      echo "Use 'cts <user> <alias>' to connect first."
+      echo "Run 'cts -help' for more information."
+      exit 0
+    fi
+    read -r user host <<< "$last"
+    echo -e "${GREEN}Reconnecting to last host:${NC} $user@$host"
+    exec ssh "${user}@${host}"
+    ;;
+  *)
+    # cts <alias>  or  cts <user> <alias>
+    if [ $# -eq 1 ]; then
+      alias="$1"
+      user_host=$(load_last)
+      if [ -z "$user_host" ]; then
+        echo -e "${RED}Error:${NC} No saved user found. Connect once using 'cts <user> <alias>'."
+        echo "Run 'cts -help' for more information."
+        exit 1
+      fi
+      read -r user _ <<< "$user_host"
+      host=$(get_host "$alias")
+      if [ -z "$host" ]; then
+        echo -e "${RED}Error:${NC} Alias '$alias' not found."
+        exit 1
+      fi
+      echo -e "${GREEN}Connecting:${NC} $user@$host"
+      save_last "$user" "$host"
+      exec ssh "${user}@${host}"
+    elif [ $# -eq 2 ]; then
+      user="$1"
+      alias="$2"
+      host=$(get_host "$alias")
+      if [ -z "$host" ]; then
+        echo -e "${RED}Error:${NC} Alias '$alias' not found."
+        exit 1
+      fi
+      echo -e "${GREEN}Connecting:${NC} $user@$host"
+      save_last "$user" "$host"
+      exec ssh "${user}@${host}"
+    else
+      show_help
+      exit 1
+    fi
+    ;;
+esac
