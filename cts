@@ -8,6 +8,7 @@
 #   cts <alias>
 #   cts                      -> reconnect to last host
 #   cts -a name=host         -> add alias
+#   cts -a name=host:port    -> add alias with port
 #   cts -rm name             -> remove alias
 #   cts -rma                 -> remove all aliases (with confirmation)
 #   cts -l                   -> list aliases
@@ -18,7 +19,7 @@
 
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
-VERSION="v1.3"
+VERSION="v1.3.1"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -39,6 +40,7 @@ show_help() {
   echo
   echo "Options:"
   echo "  -a name=host             Add alias"
+  echo "  -a name=host:port        Add alias with custom port"
   echo "  -rm name                 Remove alias"
   echo "  -rma                     Remove all aliases (with confirmation)"
   echo "  -l                       List aliases"
@@ -48,12 +50,27 @@ show_help() {
   echo "  -help                    Show this help message"
 }
 
+# Extract host and port from alias entry
+# Format: alias=host:port or alias=host
 get_host() {
-  grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2
+  local entry=$(grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2)
+  # Extract host part (everything before :port)
+  echo "${entry%%:*}"
 }
 
+get_port() {
+  local entry=$(grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2)
+  # Check if entry contains port
+  if [[ "$entry" == *:* ]]; then
+    echo "${entry##*:}"
+  else
+    echo ""
+  fi
+}
+
+# Save last connection: user host port
 save_last() {
-  echo "$1 $2" > "$LAST_FILE"
+  echo "$1 $2 $3" > "$LAST_FILE"
 }
 
 load_last() {
@@ -67,7 +84,7 @@ load_last() {
 
 remove_last_if_matches() {
   if [ -f "$LAST_FILE" ]; then
-    read -r _ last_host < "$LAST_FILE"
+    read -r _ last_host _ < "$LAST_FILE"
     if [ "$1" = "$last_host" ]; then
       rm -f "$LAST_FILE"
     fi
@@ -96,10 +113,10 @@ case "$1" in
   -a)
     entry="${2}"
     name="${entry%%=*}"
-    host="${entry#*=}"
+    host_port="${entry#*=}"
 
-    if [ -z "$name" ] || [ -z "$host" ]; then
-      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -a name=host"
+    if [ -z "$name" ] || [ -z "$host_port" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -a name=host or cts -a name=host:port"
       exit 1
     fi
 
@@ -108,8 +125,12 @@ case "$1" in
       exit 1
     fi
 
-    echo "$name=$host" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Added alias:${NC} $name → $host"
+    echo "$name=$host_port" >> "$CONFIG_FILE"
+    if [[ "$host_port" == *:* ]]; then
+      echo -e "${GREEN}Added alias:${NC} $name → $host_port"
+    else
+      echo -e "${GREEN}Added alias:${NC} $name → $host_port"
+    fi
     ;;
   -rm)
     if [ -z "$2" ]; then
@@ -171,28 +192,40 @@ case "$1" in
       echo "Run 'cts -help' for more information."
       exit 0
     fi
-    read -r user host <<< "$last"
-    echo -e "${GREEN}Reconnecting to last host:${NC} $user@$host"
-    exec ssh "${user}@${host}"
+    read -r user host port <<< "$last"
+    if [ -n "$port" ]; then
+      echo -e "${GREEN}Reconnecting to last host:${NC} $user@$host:$port"
+      exec ssh -p "$port" "${user}@${host}"
+    else
+      echo -e "${GREEN}Reconnecting to last host:${NC} $user@$host"
+      exec ssh "${user}@${host}"
+    fi
     ;;
   *)
     if [ $# -eq 1 ]; then
       alias="$1"
-      user_host=$(load_last)
-      if [ -z "$user_host" ]; then
+      user_host_port=$(load_last)
+      if [ -z "$user_host_port" ]; then
         echo -e "${RED}Error:${NC} No saved user found. Connect once using 'cts <user> <alias>'."
         echo "Run 'cts -help' for more information."
         exit 1
       fi
-      read -r user _ <<< "$user_host"
+      read -r user _ _ <<< "$user_host_port"
       host=$(get_host "$alias")
       if [ -z "$host" ]; then
         echo -e "${RED}Error:${NC} Alias '$alias' not found."
         exit 1
       fi
-      echo -e "${GREEN}Connecting:${NC} $user@$host"
-      save_last "$user" "$host"
-      exec ssh "${user}@${host}"
+      port=$(get_port "$alias")
+      if [ -n "$port" ]; then
+        echo -e "${GREEN}Connecting:${NC} $user@$host:$port"
+        save_last "$user" "$host" "$port"
+        exec ssh -p "$port" "${user}@${host}"
+      else
+        echo -e "${GREEN}Connecting:${NC} $user@$host"
+        save_last "$user" "$host" ""
+        exec ssh "${user}@${host}"
+      fi
     elif [ $# -eq 2 ]; then
       user="$1"
       alias="$2"
@@ -201,9 +234,16 @@ case "$1" in
         echo -e "${RED}Error:${NC} Alias '$alias' not found."
         exit 1
       fi
-      echo -e "${GREEN}Connecting:${NC} $user@$host"
-      save_last "$user" "$host"
-      exec ssh "${user}@${host}"
+      port=$(get_port "$alias")
+      if [ -n "$port" ]; then
+        echo -e "${GREEN}Connecting:${NC} $user@$host:$port"
+        save_last "$user" "$host" "$port"
+        exec ssh -p "$port" "${user}@${host}"
+      else
+        echo -e "${GREEN}Connecting:${NC} $user@$host"
+        save_last "$user" "$host" ""
+        exec ssh "${user}@${host}"
+      fi
     else
       show_help
       exit 1
