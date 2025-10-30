@@ -16,7 +16,25 @@ _cts_completion() {
     local config_file="${HOME}/.cts_hosts"
     
     # Options that CTS supports
-    opts="-a -rm -rma -l -export -import -v -help"
+    opts="-a -rm -rma -l -t -i -rn -export -import -v -help"
+    
+    # If previous word was -t, don't complete (user needs to type alias name, then tags)
+    if [[ "$prev" == "-t" ]]; then
+        if [[ -f "$config_file" ]]; then
+            local aliases=$(cut -d'=' -f1 "$config_file" 2>/dev/null)
+            COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
+        fi
+        return 0
+    fi
+    
+    # If previous word was -i or -rn, complete alias names
+    if [[ "$prev" == "-i" ]] || [[ "$prev" == "-rn" ]]; then
+        if [[ -f "$config_file" ]]; then
+            local aliases=$(cut -d'=' -f1 "$config_file" 2>/dev/null)
+            COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
+        fi
+        return 0
+    fi
     
     # If previous word was -a, don't complete (user needs to type name=host)
     if [[ "$prev" == "-a" ]]; then

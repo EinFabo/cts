@@ -1,7 +1,7 @@
 #!/bin/bash
 # =======================================
 # CTS (Connect To Server)
-# v1.3.1
+# v1.4
 # =======================================
 # Usage:
 #   cts <username> <alias>
@@ -11,7 +11,10 @@
 #   cts -a name=host:port    -> add alias with port
 #   cts -rm name             -> remove alias
 #   cts -rma                 -> remove all aliases (with confirmation)
-#   cts -l                   -> list aliases
+#   cts -l                   -> list aliases (with tags)
+#   cts -t name tag1,tag2    -> add tags to alias
+#   cts -i name              -> show alias info
+#   cts -rn oldname newname  -> rename alias
 #   cts -export <file>       -> export aliases to file
 #   cts -import <file>       -> import aliases from file
 #   cts -help                -> show help
@@ -19,7 +22,7 @@
 
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
-VERSION="v1.3.1"
+VERSION="v1.4"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -43,26 +46,47 @@ show_help() {
   echo "  -a name=host:port        Add alias with custom port"
   echo "  -rm name                 Remove alias"
   echo "  -rma                     Remove all aliases (with confirmation)"
-  echo "  -l                       List aliases"
+  echo "  -l                       List aliases (with tags)"
+  echo "  -t name tag1,tag2       Add tags to alias"
+  echo "  -i name                  Show alias information"
+  echo "  -rn oldname newname      Rename alias"
   echo "  -export <file>           Export aliases to a file"
   echo "  -import <file>           Import aliases from a file"
   echo "  -v                       Show version"
   echo "  -help                    Show this help message"
 }
 
-# Extract host and port from alias entry
-# Format: alias=host:port or alias=host
+# Extract host, port, and tags from alias entry
+# Format: alias=host:port|tag1,tag2 or alias=host|tag1,tag2 or alias=host:port or alias=host
+get_full_entry() {
+  grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2
+}
+
 get_host() {
-  local entry=$(grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2)
+  local entry=$(get_full_entry "$1")
+  # Remove tags if present (everything after |)
+  entry="${entry%%|*}"
   # Extract host part (everything before :port)
   echo "${entry%%:*}"
 }
 
 get_port() {
-  local entry=$(grep -E "^$1=" "$CONFIG_FILE" | cut -d'=' -f2)
+  local entry=$(get_full_entry "$1")
+  # Remove tags if present
+  entry="${entry%%|*}"
   # Check if entry contains port
   if [[ "$entry" == *:* ]]; then
     echo "${entry##*:}"
+  else
+    echo ""
+  fi
+}
+
+get_tags() {
+  local entry=$(get_full_entry "$1")
+  # Extract tags part (everything after |)
+  if [[ "$entry" == *\|* ]]; then
+    echo "${entry##*|}"
   else
     echo ""
   fi
@@ -73,10 +97,11 @@ save_last() {
   echo "$1 $2 $3" > "$LAST_FILE"
 }
 
+# Load last connection: returns user host port
 load_last() {
   if [ -f "$LAST_FILE" ]; then
-    read -r user host < "$LAST_FILE"
-    echo "$user $host"
+    read -r user host port < "$LAST_FILE"
+    echo "$user $host $port"
   else
     echo ""
   fi
@@ -107,7 +132,35 @@ case "$1" in
       echo "(none)"
       exit 0
     fi
-    cat "$CONFIG_FILE"
+    while IFS= read -r line; do
+      if [ -z "$line" ]; then
+        continue
+      fi
+      alias="${line%%=*}"
+      entry="${line#*=}"
+      host_port="${entry%%|*}"
+      tags="${entry##*|}"
+      
+      if [[ "$tags" == "$entry" ]]; then
+        tags=""
+      fi
+      
+      if [[ "$host_port" == *:* ]]; then
+        port="${host_port##*:}"
+        host="${host_port%%:*}"
+        if [ -n "$tags" ]; then
+          echo "$alias → $host:$port | tags: $tags"
+        else
+          echo "$alias → $host:$port"
+        fi
+      else
+        if [ -n "$tags" ]; then
+          echo "$alias → $host_port | tags: $tags"
+        else
+          echo "$alias → $host_port"
+        fi
+      fi
+    done < "$CONFIG_FILE"
     exit 0
     ;;
   -a)
@@ -126,11 +179,107 @@ case "$1" in
     fi
 
     echo "$name=$host_port" >> "$CONFIG_FILE"
-    if [[ "$host_port" == *:* ]]; then
-      echo -e "${GREEN}Added alias:${NC} $name → $host_port"
-    else
-      echo -e "${GREEN}Added alias:${NC} $name → $host_port"
+    echo -e "${GREEN}Added alias:${NC} $name → $host_port"
+    ;;
+  -t)
+    if [ -z "$2" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -t name tag1,tag2"
+      exit 1
     fi
+    
+    alias_name="$2"
+    # Combine all remaining arguments as tags (in case user uses spaces: tag1, tag2, tag3)
+    shift 2
+    tags="$*"
+    # Remove spaces after commas for consistent formatting
+    tags=$(echo "$tags" | sed 's/, */,/g')
+    
+    if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
+      exit 1
+    fi
+    
+    # Get current entry
+    current_entry=$(get_full_entry "$alias_name")
+    host_port="${current_entry%%|*}"
+    
+    # Update entry with tags
+    grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    echo "$alias_name=$host_port|$tags" >> "$CONFIG_FILE"
+    echo -e "${GREEN}Added tags to alias:${NC} $alias_name → tags: $tags"
+    ;;
+  -i)
+    if [ -z "$2" ]; then
+      echo -e "${RED}Error:${NC} Missing alias name."
+      exit 1
+    fi
+    
+    alias_name="$2"
+    
+    if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
+      exit 1
+    fi
+    
+    host=$(get_host "$alias_name")
+    port=$(get_port "$alias_name")
+    tags=$(get_tags "$alias_name")
+    
+    echo -e "${YELLOW}Alias Information:${NC}"
+    echo "  Name: $alias_name"
+    echo "  Host: $host"
+    if [ -n "$port" ]; then
+      echo "  Port: $port"
+    else
+      echo "  Port: 22 (default)"
+    fi
+    if [ -n "$tags" ]; then
+      echo "  Tags: $tags"
+    else
+      echo "  Tags: (none)"
+    fi
+    exit 0
+    ;;
+  -rn)
+    if [ -z "$2" ] || [ -z "$3" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -rn oldname newname"
+      exit 1
+    fi
+    
+    old_name="$2"
+    new_name="$3"
+    
+    if ! grep -qE "^$old_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$old_name' not found."
+      exit 1
+    fi
+    
+    if grep -qE "^$new_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$new_name' already exists."
+      exit 1
+    fi
+    
+    # Get the entry
+    entry=$(get_full_entry "$old_name")
+    
+    # Update config file
+    grep -vE "^$old_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    echo "$new_name=$entry" >> "$CONFIG_FILE"
+    
+    # Get host from old alias for potential history update
+    old_host=$(get_host "$old_name")
+    
+    # Update last connection if host matches (to ensure reconnect works with new name)
+    if [ -f "$LAST_FILE" ]; then
+      read -r user saved_host port < "$LAST_FILE"
+      if [ "$old_host" = "$saved_host" ]; then
+        # Host matches - save_last will be called on next connection anyway
+        # But we update it here to ensure consistency
+        save_last "$user" "$saved_host" "$port"
+      fi
+    fi
+    
+    echo -e "${GREEN}Renamed alias:${NC} $old_name → $new_name"
     ;;
   -rm)
     if [ -z "$2" ]; then
@@ -175,14 +324,19 @@ case "$1" in
       echo -e "${RED}Error:${NC} File not found: $file"
       exit 1
     fi
+    imported_count=0
     while IFS= read -r line; do
+      if [ -z "$line" ]; then
+        continue
+      fi
       alias="${line%%=*}"
-      host="${line#*=}"
+      entry="${line#*=}"
       if ! grep -qE "^$alias=" "$CONFIG_FILE"; then
-        echo "$alias=$host" >> "$CONFIG_FILE"
+        echo "$alias=$entry" >> "$CONFIG_FILE"
+        imported_count=$((imported_count + 1))
       fi
     done < "$file"
-    echo -e "${GREEN}Imported aliases from:${NC} $file"
+    echo -e "${GREEN}Imported $imported_count alias(es) from:${NC} $file"
     ;;
   "")
     last=$(load_last)
