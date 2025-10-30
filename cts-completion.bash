@@ -16,10 +16,10 @@ _cts_completion() {
     local config_file="${HOME}/.cts_hosts"
     
     # Options that CTS supports
-    opts="-a -rm -rma -l -t -i -rn -export -import -v -help"
+    opts="-a -rm -rma -l -t -ta -trm -tc -i -rn -export -import -v -help"
     
-    # If previous word was -t, don't complete (user needs to type alias name, then tags)
-    if [[ "$prev" == "-t" ]]; then
+    # If previous word was -t, -ta, -trm, -tc, -i, or -rn, complete alias names
+    if [[ "$prev" == "-t" ]] || [[ "$prev" == "-ta" ]] || [[ "$prev" == "-trm" ]] || [[ "$prev" == "-tc" ]] || [[ "$prev" == "-i" ]] || [[ "$prev" == "-rn" ]]; then
         if [[ -f "$config_file" ]]; then
             local aliases=$(cut -d'=' -f1 "$config_file" 2>/dev/null)
             COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
@@ -27,11 +27,18 @@ _cts_completion() {
         return 0
     fi
     
-    # If previous word was -i or -rn, complete alias names
-    if [[ "$prev" == "-i" ]] || [[ "$prev" == "-rn" ]]; then
+    # If previous word was -l and current is -t, don't complete (user needs to type tag)
+    if [[ "$prev" == "-l" ]] && [[ "$cur" == "-t" ]]; then
+        COMPREPLY=( "-t" )
+        return 0
+    fi
+    
+    # If previous word was -l -t, complete with available tags
+    if [[ "${COMP_WORDS[COMP_CWORD-2]}" == "-l" ]] && [[ "$prev" == "-t" ]]; then
         if [[ -f "$config_file" ]]; then
-            local aliases=$(cut -d'=' -f1 "$config_file" 2>/dev/null)
-            COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
+            # Extract all tags from config file
+            local all_tags=$(cut -d'=' -f2 "$config_file" 2>/dev/null | grep '|' | cut -d'|' -f2 | tr ',' '\n' | sort -u)
+            COMPREPLY=( $(compgen -W "$all_tags" -- "$cur") )
         fi
         return 0
     fi

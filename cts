@@ -1,7 +1,7 @@
 #!/bin/bash
 # =======================================
 # CTS (Connect To Server)
-# v1.4
+# v1.4.1
 # =======================================
 # Usage:
 #   cts <username> <alias>
@@ -12,7 +12,11 @@
 #   cts -rm name             -> remove alias
 #   cts -rma                 -> remove all aliases (with confirmation)
 #   cts -l                   -> list aliases (with tags)
-#   cts -t name tag1,tag2    -> add tags to alias
+#   cts -l -t tag            -> list aliases filtered by tag
+#   cts -t name tag1,tag2    -> replace all tags
+#   cts -ta name tag1,tag2   -> add tags to alias
+#   cts -trm name tag1       -> remove specific tag(s)
+#   cts -tc name             -> clear all tags
 #   cts -i name              -> show alias info
 #   cts -rn oldname newname  -> rename alias
 #   cts -export <file>       -> export aliases to file
@@ -22,7 +26,7 @@
 
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
-VERSION="v1.4"
+VERSION="v1.4.1"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -47,7 +51,11 @@ show_help() {
   echo "  -rm name                 Remove alias"
   echo "  -rma                     Remove all aliases (with confirmation)"
   echo "  -l                       List aliases (with tags)"
-  echo "  -t name tag1,tag2       Add tags to alias"
+  echo "  -l -t tag               List aliases filtered by tag"
+  echo "  -t name tag1,tag2       Replace all tags"
+  echo "  -ta name tag1,tag2      Add tags to alias"
+  echo "  -trm name tag1          Remove specific tag(s)"
+  echo "  -tc name                Clear all tags"
   echo "  -i name                  Show alias information"
   echo "  -rn oldname newname      Rename alias"
   echo "  -export <file>           Export aliases to a file"
@@ -127,11 +135,19 @@ case "$1" in
     exit 0
     ;;
   -l)
+    filter_tag=""
+    # Check if tag filter is specified
+    if [ "$2" = "-t" ] && [ -n "$3" ]; then
+      filter_tag="$3"
+    fi
+    
     echo -e "${YELLOW}Saved aliases:${NC}"
     if [ ! -s "$CONFIG_FILE" ]; then
       echo "(none)"
       exit 0
     fi
+    
+    found_count=0
     while IFS= read -r line; do
       if [ -z "$line" ]; then
         continue
@@ -144,6 +160,29 @@ case "$1" in
       if [[ "$tags" == "$entry" ]]; then
         tags=""
       fi
+      
+      # Filter by tag if specified
+      if [ -n "$filter_tag" ]; then
+        # Check if filter_tag is in tags (comma-separated)
+        if [[ "$tags" == *"$filter_tag"* ]]; then
+          # More precise check: ensure it's a complete tag match
+          matched=false
+          IFS=',' read -ra tag_array <<< "$tags"
+          for tag in "${tag_array[@]}"; do
+            if [ "$tag" = "$filter_tag" ]; then
+              matched=true
+              break
+            fi
+          done
+          if [ "$matched" = false ]; then
+            continue
+          fi
+        else
+          continue
+        fi
+      fi
+      
+      found_count=$((found_count + 1))
       
       if [[ "$host_port" == *:* ]]; then
         port="${host_port##*:}"
@@ -161,6 +200,11 @@ case "$1" in
         fi
       fi
     done < "$CONFIG_FILE"
+    
+    if [ -n "$filter_tag" ] && [ $found_count -eq 0 ]; then
+      echo "(no aliases found with tag: $filter_tag)"
+    fi
+    
     exit 0
     ;;
   -a)
@@ -206,7 +250,144 @@ case "$1" in
     # Update entry with tags
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     echo "$alias_name=$host_port|$tags" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Added tags to alias:${NC} $alias_name → tags: $tags"
+    echo -e "${GREEN}Replaced tags for alias:${NC} $alias_name → tags: $tags"
+    ;;
+  -ta)
+    if [ -z "$2" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -ta name tag1,tag2"
+      exit 1
+    fi
+    
+    alias_name="$2"
+    shift 2
+    new_tags="$*"
+    new_tags=$(echo "$new_tags" | sed 's/, */,/g')
+    
+    if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
+      exit 1
+    fi
+    
+    # Get current entry
+    current_entry=$(get_full_entry "$alias_name")
+    host_port="${current_entry%%|*}"
+    existing_tags="${current_entry##*|}"
+    
+    if [[ "$existing_tags" == "$current_entry" ]]; then
+      existing_tags=""
+    fi
+    
+    # Merge tags: combine existing and new, remove duplicates
+    if [ -n "$existing_tags" ]; then
+      all_tags="$existing_tags,$new_tags"
+    else
+      all_tags="$new_tags"
+    fi
+    
+    # Remove duplicates by converting to array and back
+    IFS=',' read -ra tag_array <<< "$all_tags"
+    declare -A seen
+    unique_tags=""
+    for tag in "${tag_array[@]}"; do
+      tag=$(echo "$tag" | xargs)  # trim whitespace
+      if [ -z "$tag" ]; then
+        continue
+      fi
+      if [ -z "${seen[$tag]}" ]; then
+        seen[$tag]=1
+        if [ -z "$unique_tags" ]; then
+          unique_tags="$tag"
+        else
+          unique_tags="$unique_tags,$tag"
+        fi
+      fi
+    done
+    
+    # Update entry with merged tags
+    grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    echo "$alias_name=$host_port|$unique_tags" >> "$CONFIG_FILE"
+    echo -e "${GREEN}Added tags to alias:${NC} $alias_name → tags: $unique_tags"
+    ;;
+  -trm)
+    if [ -z "$2" ] || [ -z "$3" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -trm name tag1"
+      exit 1
+    fi
+    
+    alias_name="$2"
+    tags_to_remove="$3"
+    tags_to_remove=$(echo "$tags_to_remove" | sed 's/, */,/g')
+    
+    if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
+      exit 1
+    fi
+    
+    # Get current entry
+    current_entry=$(get_full_entry "$alias_name")
+    host_port="${current_entry%%|*}"
+    existing_tags="${current_entry##*|}"
+    
+    if [[ "$existing_tags" == "$current_entry" ]]; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' has no tags to remove."
+      exit 1
+    fi
+    
+    # Remove specified tags
+    IFS=',' read -ra remove_array <<< "$tags_to_remove"
+    IFS=',' read -ra existing_array <<< "$existing_tags"
+    remaining_tags=""
+    
+    for existing_tag in "${existing_array[@]}"; do
+      existing_tag=$(echo "$existing_tag" | xargs)
+      should_remove=false
+      for remove_tag in "${remove_array[@]}"; do
+        remove_tag=$(echo "$remove_tag" | xargs)
+        if [ "$existing_tag" = "$remove_tag" ]; then
+          should_remove=true
+          break
+        fi
+      done
+      if [ "$should_remove" = false ] && [ -n "$existing_tag" ]; then
+        if [ -z "$remaining_tags" ]; then
+          remaining_tags="$existing_tag"
+        else
+          remaining_tags="$remaining_tags,$existing_tag"
+        fi
+      fi
+    done
+    
+    # Update entry
+    grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    if [ -n "$remaining_tags" ]; then
+      echo "$alias_name=$host_port|$remaining_tags" >> "$CONFIG_FILE"
+      echo -e "${GREEN}Removed tags from alias:${NC} $alias_name → remaining tags: $remaining_tags"
+    else
+      echo "$alias_name=$host_port" >> "$CONFIG_FILE"
+      echo -e "${GREEN}Removed all tags from alias:${NC} $alias_name"
+    fi
+    ;;
+  -tc)
+    if [ -z "$2" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -tc name"
+      exit 1
+    fi
+    
+    alias_name="$2"
+    
+    if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
+      exit 1
+    fi
+    
+    # Get current entry
+    current_entry=$(get_full_entry "$alias_name")
+    host_port="${current_entry%%|*}"
+    
+    # Update entry without tags
+    grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    echo "$alias_name=$host_port" >> "$CONFIG_FILE"
+    echo -e "${GREEN}Cleared all tags from alias:${NC} $alias_name"
     ;;
   -i)
     if [ -z "$2" ]; then
