@@ -23,6 +23,7 @@
 #   cts -du alias username   -> set default user for alias
 #   cts -export <file>       -> export aliases to file
 #   cts -import <file>       -> import aliases from file
+#   cts -uc                  -> check for updates
 #   cts -help                -> show help
 # =======================================
 
@@ -75,6 +76,7 @@ show_help() {
   echo
   echo "Other:"
   echo "  -v                       Show version"
+  echo "  -uc                      Check for updates"
   echo "  -help                    Show this help message"
 }
 
@@ -195,6 +197,72 @@ remove_alias_last() {
   rm -f "$alias_last_file"
 }
 
+# Check for updates from GitHub
+check_for_updates() {
+  local REPO="EinFabo/cts"
+  local current_version="$VERSION"
+  
+  echo -e "${YELLOW}Checking for updates...${NC}"
+  
+  # Get latest version from GitHub API
+  local latest_version=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep -oP '"tag_name": "\K(.*)(?=")')
+  
+  if [ -z "$latest_version" ]; then
+    echo -e "${RED}Error:${NC} Could not fetch latest version. Check your internet connection."
+    return 1
+  fi
+  
+  # Compare versions (remove 'v' prefix for comparison)
+  local current_clean="${current_version#v}"
+  local latest_clean="${latest_version#v}"
+  
+  if [ "$current_clean" = "$latest_clean" ]; then
+    echo -e "${GREEN}You are already using the latest version:${NC} $current_version"
+    return 0
+  fi
+  
+  echo -e "${YELLOW}New version available!${NC}"
+  echo "  Current version: $current_version"
+  echo "  Latest version:  $latest_version"
+  echo ""
+  read -rp "Install latest version? [Y/n]: " confirm
+  
+  if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    echo "Update cancelled."
+    return 0
+  fi
+  
+  # Install latest version using install.sh
+  echo ""
+  echo "Installing latest version..."
+  
+  # Try to find install.sh in same directory as cts script
+  local script_dir="$(cd "$(dirname "$0")" && pwd)"
+  local install_script="$script_dir/install.sh"
+  
+  if [ ! -f "$install_script" ]; then
+    # If install.sh not found locally, download it temporarily
+    install_script=$(mktemp)
+    curl -fsSL "https://raw.githubusercontent.com/$REPO/main/install.sh" -o "$install_script" 2>/dev/null
+    if [ $? -ne 0 ]; then
+      echo -e "${RED}Error:${NC} Could not download install script."
+      rm -f "$install_script"
+      return 1
+    fi
+    chmod +x "$install_script"
+  fi
+  
+  # Run install script with latest version
+  bash "$install_script" "$latest_version"
+  
+  # Clean up temporary install script if we downloaded it
+  if [[ "$install_script" == /tmp/* ]]; then
+    rm -f "$install_script"
+  fi
+  
+  return 0
+}
+
 # --- Main logic ---
 case "$1" in
   -help)
@@ -204,6 +272,10 @@ case "$1" in
   -v)
     echo "CTS version $VERSION"
     exit 0
+    ;;
+  -uc)
+    check_for_updates
+    exit $?
     ;;
   -l)
     filter_tag=""
@@ -259,15 +331,15 @@ case "$1" in
         port="${host_port##*:}"
         host="${host_port%%:*}"
         if [ -n "$tags" ]; then
-          echo "$alias → $host:$port | tags: $tags"
+          echo "$alias ? $host:$port | tags: $tags"
         else
-          echo "$alias → $host:$port"
+          echo "$alias ? $host:$port"
         fi
       else
         if [ -n "$tags" ]; then
-          echo "$alias → $host_port | tags: $tags"
+          echo "$alias ? $host_port | tags: $tags"
         else
-          echo "$alias → $host_port"
+          echo "$alias ? $host_port"
         fi
       fi
     done < "$CONFIG_FILE"
@@ -294,7 +366,7 @@ case "$1" in
     fi
 
     echo "$name=$host_port" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Added alias:${NC} $name → $host_port"
+    echo -e "${GREEN}Added alias:${NC} $name ? $host_port"
     ;;
   -t)
     if [ -z "$2" ]; then
@@ -321,7 +393,7 @@ case "$1" in
     # Update entry with tags
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     echo "$alias_name=$host_port|$tags" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Replaced tags for alias:${NC} $alias_name → tags: $tags"
+    echo -e "${GREEN}Replaced tags for alias:${NC} $alias_name ? tags: $tags"
     ;;
   -ta)
     if [ -z "$2" ]; then
@@ -377,7 +449,7 @@ case "$1" in
     # Update entry with merged tags
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     echo "$alias_name=$host_port|$unique_tags" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Added tags to alias:${NC} $alias_name → tags: $unique_tags"
+    echo -e "${GREEN}Added tags to alias:${NC} $alias_name ? tags: $unique_tags"
     ;;
   -trm)
     if [ -z "$2" ] || [ -z "$3" ]; then
@@ -432,7 +504,7 @@ case "$1" in
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     if [ -n "$remaining_tags" ]; then
       echo "$alias_name=$host_port|$remaining_tags" >> "$CONFIG_FILE"
-      echo -e "${GREEN}Removed tags from alias:${NC} $alias_name → remaining tags: $remaining_tags"
+      echo -e "${GREEN}Removed tags from alias:${NC} $alias_name ? remaining tags: $remaining_tags"
     else
       echo "$alias_name=$host_port" >> "$CONFIG_FILE"
       echo -e "${GREEN}Removed all tags from alias:${NC} $alias_name"
@@ -520,7 +592,7 @@ case "$1" in
     fi
     
     set_default_user "$alias_name" "$username"
-    echo -e "${GREEN}Set default user for alias:${NC} $alias_name → $username"
+    echo -e "${GREEN}Set default user for alias:${NC} $alias_name ? $username"
     exit 0
     ;;
   -rn)
@@ -576,7 +648,7 @@ case "$1" in
       set_default_user "$new_name" "$default_user"
     fi
     
-    echo -e "${GREEN}Renamed alias:${NC} $old_name → $new_name"
+    echo -e "${GREEN}Renamed alias:${NC} $old_name ? $new_name"
     ;;
   -rm)
     if [ -z "$2" ]; then

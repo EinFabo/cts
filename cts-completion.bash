@@ -16,7 +16,7 @@ _cts_completion() {
     local config_file="${HOME}/.cts_hosts"
     
     # Options that CTS supports
-    opts="-a -rm -rma -l -t -ta -trm -tc -i -rn -du -export -import -v -help"
+    opts="-a -rm -rma -l -t -ta -trm -tc -i -rn -du -export -import -v -uc -help"
     
     # If previous word was -t, -ta, -trm, -tc, -i, -rn, or -du, complete alias names
     if [[ "$prev" == "-t" ]] || [[ "$prev" == "-ta" ]] || [[ "$prev" == "-trm" ]] || [[ "$prev" == "-tc" ]] || [[ "$prev" == "-i" ]] || [[ "$prev" == "-rn" ]] || [[ "$prev" == "-du" ]]; then
