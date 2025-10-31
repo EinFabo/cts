@@ -16,10 +16,10 @@ _cts_completion() {
     local config_file="${HOME}/.cts_hosts"
     
     # Options that CTS supports
-    opts="-a -rm -rma -l -t -ta -trm -tc -i -rn -export -import -v -help"
+    opts="-a -rm -rma -l -t -ta -trm -tc -i -rn -du -export -import -v -help"
     
-    # If previous word was -t, -ta, -trm, -tc, -i, or -rn, complete alias names
-    if [[ "$prev" == "-t" ]] || [[ "$prev" == "-ta" ]] || [[ "$prev" == "-trm" ]] || [[ "$prev" == "-tc" ]] || [[ "$prev" == "-i" ]] || [[ "$prev" == "-rn" ]]; then
+    # If previous word was -t, -ta, -trm, -tc, -i, -rn, or -du, complete alias names
+    if [[ "$prev" == "-t" ]] || [[ "$prev" == "-ta" ]] || [[ "$prev" == "-trm" ]] || [[ "$prev" == "-tc" ]] || [[ "$prev" == "-i" ]] || [[ "$prev" == "-rn" ]] || [[ "$prev" == "-du" ]]; then
         if [[ -f "$config_file" ]]; then
             local aliases=$(cut -d'=' -f1 "$config_file" 2>/dev/null)
             COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
@@ -87,11 +87,17 @@ _cts_completion() {
     fi
     
     # If we're at position 2 and first word wasn't an option, complete alias names
+    # Also handle -nd flag after alias
     if [[ $COMP_CWORD -eq 2 ]] && [[ ! "${COMP_WORDS[1]}" == -* ]]; then
         if [[ -f "$config_file" ]]; then
             local aliases=$(cut -d'=' -f1 "$config_file" 2>/dev/null)
-            COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
+            COMPREPLY=( $(compgen -W "$aliases -nd" -- "$cur") )
         fi
+        return 0
+    fi
+    
+    # If we're at position 3 and first word is an alias and second is -nd, don't complete
+    if [[ $COMP_CWORD -eq 3 ]] && [[ "${COMP_WORDS[2]}" == "-nd" ]]; then
         return 0
     fi
     

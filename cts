@@ -6,6 +6,7 @@
 # Usage:
 #   cts <username> <alias>
 #   cts <alias>
+#   cts <alias> -nd          -> use last user instead of default
 #   cts                      -> reconnect to last host
 #   cts -a name=host         -> add alias
 #   cts -a name=host:port    -> add alias with port
@@ -19,6 +20,7 @@
 #   cts -tc name             -> clear all tags
 #   cts -i name              -> show alias info
 #   cts -rn oldname newname  -> rename alias
+#   cts -du alias username   -> set default user for alias
 #   cts -export <file>       -> export aliases to file
 #   cts -import <file>       -> import aliases from file
 #   cts -help                -> show help
@@ -26,6 +28,7 @@
 
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
+DEFAULT_USERS_FILE="$HOME/.cts_default_users"
 VERSION="v1.4.1"
 
 # --- Colors ---
@@ -36,30 +39,41 @@ NC='\033[0m'
 
 mkdir -p "$(dirname "$CONFIG_FILE")"
 touch "$CONFIG_FILE"
+touch "$DEFAULT_USERS_FILE"
 
 # --- Helper functions ---
 show_help() {
   echo -e "${YELLOW}CTS (Connect To Server) $VERSION${NC}"
   echo "Usage:"
-  echo "  cts <user> <alias>       Connect using alias"
-  echo "  cts <alias>              Connect using saved user"
+  echo "  cts <user> <alias>       Connect using alias with specified user"
+  echo "  cts <alias>              Connect using default user or last used user"
+  echo "  cts <alias> -nd          Connect using last used user (ignore default)"
   echo "  cts                      Reconnect to last used host"
   echo
-  echo "Options:"
+  echo "Alias Management:"
   echo "  -a name=host             Add alias"
   echo "  -a name=host:port        Add alias with custom port"
   echo "  -rm name                 Remove alias"
   echo "  -rma                     Remove all aliases (with confirmation)"
+  echo "  -rn oldname newname      Rename alias"
   echo "  -l                       List aliases (with tags)"
   echo "  -l -t tag               List aliases filtered by tag"
+  echo "  -i name                  Show alias information"
+  echo
+  echo "Tag Management:"
   echo "  -t name tag1,tag2       Replace all tags"
   echo "  -ta name tag1,tag2      Add tags to alias"
   echo "  -trm name tag1          Remove specific tag(s)"
   echo "  -tc name                Clear all tags"
-  echo "  -i name                  Show alias information"
-  echo "  -rn oldname newname      Rename alias"
+  echo
+  echo "User Management:"
+  echo "  -du alias username       Set default user for alias"
+  echo
+  echo "Import/Export:"
   echo "  -export <file>           Export aliases to a file"
   echo "  -import <file>           Import aliases from a file"
+  echo
+  echo "Other:"
   echo "  -v                       Show version"
   echo "  -help                    Show this help message"
 }
@@ -100,12 +114,26 @@ get_tags() {
   fi
 }
 
-# Save last connection: user host port
+# Get alias-specific last user file path
+get_alias_last_file() {
+  echo "$HOME/.cts_last_$1"
+}
+
+# Save last connection per alias: user host port
 save_last() {
   echo "$1 $2 $3" > "$LAST_FILE"
 }
 
-# Load last connection: returns user host port
+# Save last connection for specific alias: user port
+save_alias_last() {
+  local alias_name="$1"
+  local user="$2"
+  local port="$3"
+  local alias_last_file=$(get_alias_last_file "$alias_name")
+  echo "$user $port" > "$alias_last_file"
+}
+
+# Load last connection: returns user host port (global)
 load_last() {
   if [ -f "$LAST_FILE" ]; then
     read -r user host port < "$LAST_FILE"
@@ -115,6 +143,42 @@ load_last() {
   fi
 }
 
+# Load last connection for specific alias: returns user port
+load_alias_last() {
+  local alias_name="$1"
+  local alias_last_file=$(get_alias_last_file "$alias_name")
+  if [ -f "$alias_last_file" ]; then
+    read -r user port < "$alias_last_file"
+    echo "$user $port"
+  else
+    echo ""
+  fi
+}
+
+# Get default user for alias
+get_default_user() {
+  local alias_name="$1"
+  grep -E "^$alias_name=" "$DEFAULT_USERS_FILE" 2>/dev/null | cut -d'=' -f2
+}
+
+# Set default user for alias
+set_default_user() {
+  local alias_name="$1"
+  local username="$2"
+  # Remove existing entry if present
+  grep -vE "^$alias_name=" "$DEFAULT_USERS_FILE" > "$DEFAULT_USERS_FILE.tmp" 2>/dev/null || true
+  mv "$DEFAULT_USERS_FILE.tmp" "$DEFAULT_USERS_FILE" 2>/dev/null || true
+  # Add new entry
+  echo "$alias_name=$username" >> "$DEFAULT_USERS_FILE"
+}
+
+# Remove default user for alias
+remove_default_user() {
+  local alias_name="$1"
+  grep -vE "^$alias_name=" "$DEFAULT_USERS_FILE" > "$DEFAULT_USERS_FILE.tmp" 2>/dev/null || true
+  mv "$DEFAULT_USERS_FILE.tmp" "$DEFAULT_USERS_FILE" 2>/dev/null || true
+}
+
 remove_last_if_matches() {
   if [ -f "$LAST_FILE" ]; then
     read -r _ last_host _ < "$LAST_FILE"
@@ -122,6 +186,13 @@ remove_last_if_matches() {
       rm -f "$LAST_FILE"
     fi
   fi
+}
+
+# Remove alias-specific last user file
+remove_alias_last() {
+  local alias_name="$1"
+  local alias_last_file=$(get_alias_last_file "$alias_name")
+  rm -f "$alias_last_file"
 }
 
 # --- Main logic ---
@@ -405,6 +476,8 @@ case "$1" in
     host=$(get_host "$alias_name")
     port=$(get_port "$alias_name")
     tags=$(get_tags "$alias_name")
+    default_user=$(get_default_user "$alias_name")
+    alias_last=$(load_alias_last "$alias_name")
     
     echo -e "${YELLOW}Alias Information:${NC}"
     echo "  Name: $alias_name"
@@ -419,6 +492,35 @@ case "$1" in
     else
       echo "  Tags: (none)"
     fi
+    if [ -n "$default_user" ]; then
+      echo "  Default User: $default_user"
+    else
+      echo "  Default User: (none)"
+    fi
+    if [ -n "$alias_last" ]; then
+      read -r last_user _ <<< "$alias_last"
+      echo "  Last Used User: $last_user"
+    else
+      echo "  Last Used User: (none)"
+    fi
+    exit 0
+    ;;
+  -du)
+    if [ -z "$2" ] || [ -z "$3" ]; then
+      echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -du aliasname username"
+      exit 1
+    fi
+    
+    alias_name="$2"
+    username="$3"
+    
+    if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
+      echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
+      exit 1
+    fi
+    
+    set_default_user "$alias_name" "$username"
+    echo -e "${GREEN}Set default user for alias:${NC} $alias_name → $username"
     exit 0
     ;;
   -rn)
@@ -460,6 +562,20 @@ case "$1" in
       fi
     fi
     
+    # Move alias-specific files
+    old_alias_last_file=$(get_alias_last_file "$old_name")
+    new_alias_last_file=$(get_alias_last_file "$new_name")
+    if [ -f "$old_alias_last_file" ]; then
+      mv "$old_alias_last_file" "$new_alias_last_file"
+    fi
+    
+    # Move default user entry
+    default_user=$(get_default_user "$old_name")
+    if [ -n "$default_user" ]; then
+      remove_default_user "$old_name"
+      set_default_user "$new_name" "$default_user"
+    fi
+    
     echo -e "${GREEN}Renamed alias:${NC} $old_name → $new_name"
     ;;
   -rm)
@@ -471,6 +587,8 @@ case "$1" in
       host_to_remove=$(get_host "$2")
       grep -vE "^$2=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
       remove_last_if_matches "$host_to_remove"
+      remove_alias_last "$2"
+      remove_default_user "$2"
       echo -e "${GREEN}Removed alias:${NC} $2"
     else
       echo -e "${RED}Error:${NC} Alias '$2' not found."
@@ -480,8 +598,10 @@ case "$1" in
     echo -e "${YELLOW}This will delete all aliases and last connection data.${NC}"
     read -rp "Are you sure? [y/N]: " confirm
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
-      rm -f "$CONFIG_FILE" "$LAST_FILE"
+      rm -f "$CONFIG_FILE" "$LAST_FILE" "$DEFAULT_USERS_FILE"
+      rm -f "$HOME/.cts_last_"*
       touch "$CONFIG_FILE"
+      touch "$DEFAULT_USERS_FILE"
       echo -e "${GREEN}All aliases and saved connections deleted.${NC}"
     else
       echo "Aborted."
@@ -538,46 +658,99 @@ case "$1" in
     ;;
   *)
     if [ $# -eq 1 ]; then
+      # Case: cts alias
       alias="$1"
-      user_host_port=$(load_last)
-      if [ -z "$user_host_port" ]; then
-        echo -e "${RED}Error:${NC} No saved user found. Connect once using 'cts <user> <alias>'."
+      host=$(get_host "$alias")
+      if [ -z "$host" ]; then
+        echo -e "${RED}Error:${NC} Alias '$alias' not found."
+        exit 1
+      fi
+      
+      # Get default user first
+      user=$(get_default_user "$alias")
+      
+      # If no default user, try alias-specific last user
+      if [ -z "$user" ]; then
+        alias_last=$(load_alias_last "$alias")
+        if [ -n "$alias_last" ]; then
+          read -r user _ <<< "$alias_last"
+        fi
+      fi
+      
+      # If still no user, show error
+      if [ -z "$user" ]; then
+        echo -e "${RED}Error:${NC} No user found for alias '$alias'."
+        echo "Connect once using 'cts <user> <alias>' or set a default user with 'cts -du $alias username'."
         echo "Run 'cts -help' for more information."
         exit 1
       fi
-      read -r user _ _ <<< "$user_host_port"
-      host=$(get_host "$alias")
-      if [ -z "$host" ]; then
-        echo -e "${RED}Error:${NC} Alias '$alias' not found."
-        exit 1
-      fi
+      
       port=$(get_port "$alias")
       if [ -n "$port" ]; then
         echo -e "${GREEN}Connecting:${NC} $user@$host:$port"
         save_last "$user" "$host" "$port"
+        save_alias_last "$alias" "$user" "$port"
         exec ssh -p "$port" "${user}@${host}"
       else
         echo -e "${GREEN}Connecting:${NC} $user@$host"
         save_last "$user" "$host" ""
+        save_alias_last "$alias" "$user" ""
         exec ssh "${user}@${host}"
       fi
     elif [ $# -eq 2 ]; then
-      user="$1"
-      alias="$2"
-      host=$(get_host "$alias")
-      if [ -z "$host" ]; then
-        echo -e "${RED}Error:${NC} Alias '$alias' not found."
-        exit 1
-      fi
-      port=$(get_port "$alias")
-      if [ -n "$port" ]; then
-        echo -e "${GREEN}Connecting:${NC} $user@$host:$port"
-        save_last "$user" "$host" "$port"
-        exec ssh -p "$port" "${user}@${host}"
+      # Check if second argument is -nd flag
+      if [ "$2" = "-nd" ]; then
+        # Case: cts alias -nd (use last user instead of default)
+        alias="$1"
+        host=$(get_host "$alias")
+        if [ -z "$host" ]; then
+          echo -e "${RED}Error:${NC} Alias '$alias' not found."
+          exit 1
+        fi
+        
+        # Get alias-specific last user
+        alias_last=$(load_alias_last "$alias")
+        if [ -z "$alias_last" ]; then
+          echo -e "${RED}Error:${NC} No previously used user found for alias '$alias'."
+          echo "Connect once using 'cts <user> <alias>' first."
+          echo "Run 'cts -help' for more information."
+          exit 1
+        fi
+        
+        read -r user _ <<< "$alias_last"
+        port=$(get_port "$alias")
+        if [ -n "$port" ]; then
+          echo -e "${GREEN}Connecting:${NC} $user@$host:$port (using last user)"
+          save_last "$user" "$host" "$port"
+          save_alias_last "$alias" "$user" "$port"
+          exec ssh -p "$port" "${user}@${host}"
+        else
+          echo -e "${GREEN}Connecting:${NC} $user@$host (using last user)"
+          save_last "$user" "$host" ""
+          save_alias_last "$alias" "$user" ""
+          exec ssh "${user}@${host}"
+        fi
       else
-        echo -e "${GREEN}Connecting:${NC} $user@$host"
-        save_last "$user" "$host" ""
-        exec ssh "${user}@${host}"
+        # Case: cts user alias
+        user="$1"
+        alias="$2"
+        host=$(get_host "$alias")
+        if [ -z "$host" ]; then
+          echo -e "${RED}Error:${NC} Alias '$alias' not found."
+          exit 1
+        fi
+        port=$(get_port "$alias")
+        if [ -n "$port" ]; then
+          echo -e "${GREEN}Connecting:${NC} $user@$host:$port"
+          save_last "$user" "$host" "$port"
+          save_alias_last "$alias" "$user" "$port"
+          exec ssh -p "$port" "${user}@${host}"
+        else
+          echo -e "${GREEN}Connecting:${NC} $user@$host"
+          save_last "$user" "$host" ""
+          save_alias_last "$alias" "$user" ""
+          exec ssh "${user}@${host}"
+        fi
       fi
     else
       show_help
