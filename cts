@@ -30,7 +30,7 @@
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
 DEFAULT_USERS_FILE="$HOME/.cts_default_users"
-VERSION="v1.4.1"
+VERSION="v1.4.2"
 
 # --- Colors ---
 RED='\033[0;31m'
