@@ -226,8 +226,9 @@ You can manually edit `~/.cts_hosts` if needed. The format is:
 alias1=host1
 alias2=host2:2222
 alias3=host3:port|tag1,tag2
-alias4=host4|tag1,tag2
 ```
+
+The output uses `→` arrows to show the mapping between aliases and hosts.
 
 ## Port Support
 
@@ -306,6 +307,7 @@ Current version: **v1.5.0**
 ### Changelog
 
 #### v1.5.0 (2025)
+- **Improved User Interface**: Output now uses `→` arrows for better visual clarity
 - **Improved Error Handling**: Better validation and error messages throughout
   - Input validation for alias names, hostnames, ports, and usernames
   - Improved config file handling with automatic backup

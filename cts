@@ -480,15 +480,15 @@ case "$1" in
         port="${host_port##*:}"
         host="${host_port%%:*}"
         if [ -n "$tags" ]; then
-          echo "$alias ? $host:$port | tags: $tags"
+          echo "$alias → $host:$port | tags: $tags"
         else
-          echo "$alias ? $host:$port"
+          echo "$alias → $host:$port"
         fi
       else
         if [ -n "$tags" ]; then
-          echo "$alias ? $host_port | tags: $tags"
+          echo "$alias → $host_port | tags: $tags"
         else
-          echo "$alias ? $host_port"
+          echo "$alias → $host_port"
         fi
       fi
     done < "$CONFIG_FILE"
@@ -543,7 +543,7 @@ case "$1" in
       echo -e "${RED}Error:${NC} Could not write to config file."
       exit 1
     }
-    echo -e "${GREEN}Added alias:${NC} $name ? $host_port"
+    echo -e "${GREEN}Added alias:${NC} $name → $host_port"
     ;;
   -t)
     if [ -z "$2" ]; then
@@ -570,7 +570,7 @@ case "$1" in
     # Update entry with tags
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     echo "$alias_name=$host_port|$tags" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Replaced tags for alias:${NC} $alias_name ? tags: $tags"
+    echo -e "${GREEN}Replaced tags for alias:${NC} $alias_name → tags: $tags"
     ;;
   -ta)
     if [ -z "$2" ]; then
@@ -626,7 +626,7 @@ case "$1" in
     # Update entry with merged tags
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     echo "$alias_name=$host_port|$unique_tags" >> "$CONFIG_FILE"
-    echo -e "${GREEN}Added tags to alias:${NC} $alias_name ? tags: $unique_tags"
+    echo -e "${GREEN}Added tags to alias:${NC} $alias_name → tags: $unique_tags"
     ;;
   -trm)
     if [ -z "$2" ] || [ -z "$3" ]; then
@@ -681,7 +681,7 @@ case "$1" in
     grep -vE "^$alias_name=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     if [ -n "$remaining_tags" ]; then
       echo "$alias_name=$host_port|$remaining_tags" >> "$CONFIG_FILE"
-      echo -e "${GREEN}Removed tags from alias:${NC} $alias_name ? remaining tags: $remaining_tags"
+      echo -e "${GREEN}Removed tags from alias:${NC} $alias_name → remaining tags: $remaining_tags"
     else
       echo "$alias_name=$host_port" >> "$CONFIG_FILE"
       echo -e "${GREEN}Removed all tags from alias:${NC} $alias_name"
@@ -775,7 +775,7 @@ case "$1" in
     fi
 
     set_default_user "$alias_name" "$username"
-    echo -e "${GREEN}Set default user for alias:${NC} $alias_name ? $username"
+    echo -e "${GREEN}Set default user for alias:${NC} $alias_name → $username"
     exit 0
     ;;
   -rn)
@@ -831,7 +831,7 @@ case "$1" in
       set_default_user "$new_name" "$default_user"
     fi
     
-    echo -e "${GREEN}Renamed alias:${NC} $old_name ? $new_name"
+    echo -e "${GREEN}Renamed alias:${NC} $old_name → $new_name"
     ;;
   -rm)
     if [ -z "$2" ]; then

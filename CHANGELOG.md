@@ -17,6 +17,8 @@ All notable changes to CTS (Connect To Server) will be documented in this file.
 - **.gitignore** file to exclude temporary and backup files
 
 ### Improved
+- **User Interface**
+  - Output now uses `→` arrows instead of `?` for better visual clarity
 - **Error Handling**
   - Better error messages throughout the application
   - Detailed network error messages for update checks
