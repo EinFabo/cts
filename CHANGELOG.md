@@ -10,11 +10,6 @@ All notable changes to CTS (Connect To Server) will be documented in this file.
   - Hostnames are validated (alphanumeric with dots, hyphens, underscores)
   - Port numbers are validated (1-65535 range)
   - Usernames are validated (alphanumeric with dots, hyphens, underscores)
-- **Automated Test Suite**
-  - 40+ tests using bats (Bash Automated Testing System)
-  - Test coverage for basic operations, tags, users, and import/export
-  - `run_tests.sh` script for easy test execution
-  - Detailed test documentation in `tests/README.md`
 - **Config File Protection**
   - Automatic backup creation before modifications
   - Protection against accidental config file corruption
@@ -42,9 +37,7 @@ All notable changes to CTS (Connect To Server) will be documented in this file.
 
 ### Documentation
 - Updated README with v1.5.0 information
-- Added Testing section to README
 - Added detailed changelog
-- Created test suite documentation
 
 ## [v1.4.2] - 2024
 

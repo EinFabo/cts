@@ -299,23 +299,6 @@ Examples:
 - `docker,nginx,production`
 - `docker, nginx, production` (spaces are normalized)
 
-## Testing
-
-CTS includes an automated test suite using [bats](https://github.com/bats-core/bats-core).
-
-To run tests:
-```bash
-./run_tests.sh
-```
-
-Or run tests directly with bats:
-```bash
-cd tests
-bats *.bats
-```
-
-See [tests/README.md](tests/README.md) for more information.
-
 ## Version
 
 Current version: **v1.5.0**
@@ -328,10 +311,6 @@ Current version: **v1.5.0**
   - Improved config file handling with automatic backup
   - Better error messages for network issues during update checks
 - **Enhanced Robustness**: Config file corruption protection and safer file operations
-- **Test Suite**: Added comprehensive test suite using bats
-  - Basic functionality tests (add, remove, list, rename)
-  - Tag management tests
-  - User management and import/export tests
 - **Better Network Error Handling**: Timeout handling and detailed error messages for update checks
 
 #### v1.4.2 (2024)
