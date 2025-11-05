@@ -1,0 +1,13 @@
+# Backup files
+*.bak
+*.tmp
+*.tmp.*
+
+# Test artifacts
+tests/.bats-*
+
+# MacOS
+.DS_Store
+
+# Config backups
+.cts_hosts.bak

@@ -1,7 +1,7 @@
 #!/bin/bash
 # =======================================
 # CTS (Connect To Server)
-# v1.4.1
+# v1.5.0
 # =======================================
 # Usage:
 #   cts <username> <alias>
@@ -30,7 +30,7 @@
 CONFIG_FILE="$HOME/.cts_hosts"
 LAST_FILE="$HOME/.cts_last"
 DEFAULT_USERS_FILE="$HOME/.cts_default_users"
-VERSION="v1.4.2"
+VERSION="v1.5.0"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -38,9 +38,124 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-mkdir -p "$(dirname "$CONFIG_FILE")"
-touch "$CONFIG_FILE"
-touch "$DEFAULT_USERS_FILE"
+# --- Initialization and validation ---
+init_config_files() {
+  mkdir -p "$(dirname "$CONFIG_FILE")" 2>/dev/null || {
+    echo -e "${RED}Error:${NC} Could not create config directory."
+    exit 1
+  }
+
+  if [ ! -f "$CONFIG_FILE" ]; then
+    touch "$CONFIG_FILE" 2>/dev/null || {
+      echo -e "${RED}Error:${NC} Could not create config file: $CONFIG_FILE"
+      exit 1
+    }
+  fi
+
+  if [ ! -f "$DEFAULT_USERS_FILE" ]; then
+    touch "$DEFAULT_USERS_FILE" 2>/dev/null || {
+      echo -e "${RED}Error:${NC} Could not create default users file: $DEFAULT_USERS_FILE"
+      exit 1
+    }
+  fi
+
+  # Validate config file is readable and writable
+  if [ ! -r "$CONFIG_FILE" ] || [ ! -w "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error:${NC} Config file is not accessible: $CONFIG_FILE"
+    exit 1
+  fi
+}
+
+# Validate alias name format
+validate_alias_name() {
+  local name="$1"
+  if [ -z "$name" ]; then
+    return 1
+  fi
+  # Check for invalid characters (=, |, spaces, special chars)
+  if [[ "$name" =~ [=\|[:space:]] ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# Validate hostname format
+validate_hostname() {
+  local host="$1"
+  if [ -z "$host" ]; then
+    return 1
+  fi
+  # Basic validation: alphanumeric, dots, hyphens, underscores
+  if [[ ! "$host" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# Validate port number
+validate_port() {
+  local port="$1"
+  if [ -z "$port" ]; then
+    return 0  # Empty port is valid (uses default)
+  fi
+  # Check if port is a number between 1 and 65535
+  if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    return 1
+  fi
+  return 0
+}
+
+# Validate username format
+validate_username() {
+  local user="$1"
+  if [ -z "$user" ]; then
+    return 1
+  fi
+  # Basic validation: alphanumeric, hyphens, underscores, dots
+  if [[ ! "$user" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# Safely update config file with backup
+safe_config_update() {
+  local temp_file="$CONFIG_FILE.tmp.$$"
+  local backup_file="$CONFIG_FILE.bak"
+
+  # Create backup
+  if [ -f "$CONFIG_FILE" ]; then
+    cp "$CONFIG_FILE" "$backup_file" 2>/dev/null || {
+      echo -e "${RED}Error:${NC} Could not create backup of config file."
+      return 1
+    }
+  fi
+
+  # Apply changes (passed via stdin)
+  cat > "$temp_file" || {
+    echo -e "${RED}Error:${NC} Could not write to temporary file."
+    rm -f "$temp_file"
+    return 1
+  }
+
+  # Validate temp file is not empty if original wasn't
+  if [ -s "$CONFIG_FILE" ] && [ ! -s "$temp_file" ]; then
+    echo -e "${RED}Error:${NC} Update would result in empty config file. Aborting."
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  # Move temp file to config
+  mv "$temp_file" "$CONFIG_FILE" 2>/dev/null || {
+    echo -e "${RED}Error:${NC} Could not update config file."
+    rm -f "$temp_file"
+    return 1
+  }
+
+  return 0
+}
+
+init_config_files
 
 # --- Helper functions ---
 show_help() {
@@ -201,49 +316,77 @@ remove_alias_last() {
 check_for_updates() {
   local REPO="EinFabo/cts"
   local current_version="$VERSION"
-  
+
   echo -e "${YELLOW}Checking for updates...${NC}"
-  
-  # Get latest version from GitHub API
-  local latest_version=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep -oP '"tag_name": "\K(.*)(?=")')
-  
-  if [ -z "$latest_version" ]; then
-    echo -e "${RED}Error:${NC} Could not fetch latest version. Check your internet connection."
+
+  # Check if curl is available
+  if ! command -v curl &> /dev/null; then
+    echo -e "${RED}Error:${NC} curl is not installed. Please install curl to check for updates."
     return 1
   fi
-  
+
+  # Get latest version from GitHub API with timeout and error handling
+  local api_response
+  api_response=$(curl -s --max-time 10 --fail "https://api.github.com/repos/$REPO/releases/latest" 2>&1)
+  local curl_exit=$?
+
+  if [ $curl_exit -ne 0 ]; then
+    echo -e "${RED}Error:${NC} Could not fetch latest version."
+    if [ $curl_exit -eq 28 ]; then
+      echo "Request timed out. Check your internet connection."
+    elif [ $curl_exit -eq 6 ]; then
+      echo "Could not resolve host. Check your internet connection."
+    else
+      echo "Network error occurred (exit code: $curl_exit)."
+    fi
+    return 1
+  fi
+
+  local latest_version=$(echo "$api_response" | grep -oP '"tag_name": "\K(.*)(?=")')
+
+  if [ -z "$latest_version" ]; then
+    echo -e "${RED}Error:${NC} Could not parse version information from GitHub API."
+    return 1
+  fi
+
   # Compare versions (remove 'v' prefix for comparison)
   local current_clean="${current_version#v}"
   local latest_clean="${latest_version#v}"
-  
+
   if [ "$current_clean" = "$latest_clean" ]; then
     echo -e "${GREEN}You are already using the latest version:${NC} $current_version"
     return 0
   fi
-  
+
   echo -e "${YELLOW}New version available!${NC}"
   echo "  Current version: $current_version"
   echo "  Latest version:  $latest_version"
   echo ""
   read -rp "Install latest version? [Y/n]: " confirm
-  
+
   if [[ "$confirm" =~ ^[Nn]$ ]]; then
     echo "Update cancelled."
     return 0
   fi
-  
+
   # Install latest version using install.sh
   echo ""
   echo "Installing latest version..."
-  
+
   # Try to find install.sh in same directory as cts script
   local script_dir="$(cd "$(dirname "$0")" && pwd)"
   local install_script="$script_dir/install.sh"
-  
+  local temp_script=false
+
   if [ ! -f "$install_script" ]; then
     # If install.sh not found locally, download it temporarily
-    install_script=$(mktemp)
-    curl -fsSL "https://raw.githubusercontent.com/$REPO/main/install.sh" -o "$install_script" 2>/dev/null
+    install_script=$(mktemp) || {
+      echo -e "${RED}Error:${NC} Could not create temporary file."
+      return 1
+    }
+    temp_script=true
+
+    curl -fsSL --max-time 30 "https://raw.githubusercontent.com/$REPO/main/install.sh" -o "$install_script" 2>/dev/null
     if [ $? -ne 0 ]; then
       echo -e "${RED}Error:${NC} Could not download install script."
       rm -f "$install_script"
@@ -251,15 +394,21 @@ check_for_updates() {
     fi
     chmod +x "$install_script"
   fi
-  
+
   # Run install script with latest version
   bash "$install_script" "$latest_version"
-  
+  local install_exit=$?
+
   # Clean up temporary install script if we downloaded it
-  if [[ "$install_script" == /tmp/* ]]; then
+  if [ "$temp_script" = true ]; then
     rm -f "$install_script"
   fi
-  
+
+  if [ $install_exit -ne 0 ]; then
+    echo -e "${RED}Error:${NC} Installation failed."
+    return 1
+  fi
+
   return 0
 }
 
@@ -360,12 +509,40 @@ case "$1" in
       exit 1
     fi
 
+    # Validate alias name
+    if ! validate_alias_name "$name"; then
+      echo -e "${RED}Error:${NC} Invalid alias name '$name'. Alias names cannot contain spaces, '=', or '|'."
+      exit 1
+    fi
+
     if grep -qE "^$name=" "$CONFIG_FILE"; then
       echo -e "${RED}Error:${NC} Alias '$name' already exists."
       exit 1
     fi
 
-    echo "$name=$host_port" >> "$CONFIG_FILE"
+    # Extract host and port for validation
+    host="${host_port%%:*}"
+    port=""
+    if [[ "$host_port" == *:* ]]; then
+      port="${host_port##*:}"
+    fi
+
+    # Validate hostname
+    if ! validate_hostname "$host"; then
+      echo -e "${RED}Error:${NC} Invalid hostname '$host'."
+      exit 1
+    fi
+
+    # Validate port if provided
+    if ! validate_port "$port"; then
+      echo -e "${RED}Error:${NC} Invalid port '$port'. Port must be a number between 1 and 65535."
+      exit 1
+    fi
+
+    echo "$name=$host_port" >> "$CONFIG_FILE" || {
+      echo -e "${RED}Error:${NC} Could not write to config file."
+      exit 1
+    }
     echo -e "${GREEN}Added alias:${NC} $name ? $host_port"
     ;;
   -t)
@@ -582,15 +759,21 @@ case "$1" in
       echo -e "${RED}Error:${NC} Invalid syntax. Use: cts -du aliasname username"
       exit 1
     fi
-    
+
     alias_name="$2"
     username="$3"
-    
+
     if ! grep -qE "^$alias_name=" "$CONFIG_FILE"; then
       echo -e "${RED}Error:${NC} Alias '$alias_name' not found."
       exit 1
     fi
-    
+
+    # Validate username
+    if ! validate_username "$username"; then
+      echo -e "${RED}Error:${NC} Invalid username '$username'."
+      exit 1
+    fi
+
     set_default_user "$alias_name" "$username"
     echo -e "${GREEN}Set default user for alias:${NC} $alias_name ? $username"
     exit 0
@@ -806,6 +989,13 @@ case "$1" in
         # Case: cts user alias
         user="$1"
         alias="$2"
+
+        # Validate username
+        if ! validate_username "$user"; then
+          echo -e "${RED}Error:${NC} Invalid username '$user'."
+          exit 1
+        fi
+
         host=$(get_host "$alias")
         if [ -z "$host" ]; then
           echo -e "${RED}Error:${NC} Alias '$alias' not found."

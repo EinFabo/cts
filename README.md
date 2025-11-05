@@ -23,7 +23,7 @@ curl -s https://raw.githubusercontent.com/EinFabo/cts/main/install.sh | bash
 To install a specific version:
 
 ```bash
-curl -s https://raw.githubusercontent.com/EinFabo/cts/main/install.sh | bash -s v1.4.1
+curl -s https://raw.githubusercontent.com/EinFabo/cts/main/install.sh | bash -s v1.5.0
 ```
 
 After installation, ensure `$HOME/bin` is in your PATH. If bash completion doesn't work immediately, run:
@@ -299,9 +299,48 @@ Examples:
 - `docker,nginx,production`
 - `docker, nginx, production` (spaces are normalized)
 
+## Testing
+
+CTS includes an automated test suite using [bats](https://github.com/bats-core/bats-core).
+
+To run tests:
+```bash
+./run_tests.sh
+```
+
+Or run tests directly with bats:
+```bash
+cd tests
+bats *.bats
+```
+
+See [tests/README.md](tests/README.md) for more information.
+
 ## Version
 
-Current version: **v1.4.1**
+Current version: **v1.5.0**
+
+### Changelog
+
+#### v1.5.0 (2025)
+- **Improved Error Handling**: Better validation and error messages throughout
+  - Input validation for alias names, hostnames, ports, and usernames
+  - Improved config file handling with automatic backup
+  - Better error messages for network issues during update checks
+- **Enhanced Robustness**: Config file corruption protection and safer file operations
+- **Test Suite**: Added comprehensive test suite using bats
+  - Basic functionality tests (add, remove, list, rename)
+  - Tag management tests
+  - User management and import/export tests
+- **Better Network Error Handling**: Timeout handling and detailed error messages for update checks
+
+#### v1.4.2 (2024)
+- Added update checking functionality (`-uc`)
+- Bug fixes and improvements
+
+#### v1.4.1 (2024)
+- Better tag support
+- Default user fixes
 
 ## License
 
